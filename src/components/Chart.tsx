@@ -1,4 +1,5 @@
-import dynamic from "next/dynamic";
+"use client";
+
 import {
   Area,
   AreaChart,
@@ -37,10 +38,18 @@ export default function Chart({
           <stop offset="95%" stopColor="#82ca9d" stopOpacity={0} />
         </linearGradient>
       </defs>
-      <XAxis dataKey="fetchNum" />
+      <XAxis
+        type="number"
+        dataKey="fetchNum"
+        ticks={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
+        domain={[1, 10]}
+      />
       <YAxis />
       <CartesianGrid strokeDasharray="3 3" />
-      <Tooltip isAnimationActive={false} content={<CustomTooltip />} />
+      <Tooltip
+        isAnimationActive={false}
+        content={<CustomTooltip line1={line1Key} line2={line2Key} />}
+      />
       <Area
         type="linear"
         dataKey={line1Key}
@@ -65,26 +74,34 @@ export default function Chart({
   );
 }
 
-function CustomTooltip({ active, payload }: any) {
+function CustomTooltip({ active, payload, line1, line2 }: any) {
   if (active && payload && payload.length) {
     console.log(payload);
     return (
       <div className="py-2 pl-4 pr-8 bg-white border rounded-sm">
         <p>#{payload[0].payload.fetchNum}</p>
         <div className="py-1"></div>
-        <p className="text-[#8884d8]">
-          Edge: {payload[0].payload.edge_processingTime}
-        </p>
-        <p className="text-[#8884d8]">
-          Cold start: {payload[0].payload.edge_coldStart.toString()}
-        </p>
+        {line1 in payload[0].payload && (
+          <>
+            <p className="text-[#8884d8]">
+              Global: {payload[0].payload[line1]}
+            </p>
+            <p className="text-[#8884d8]">
+              Cold start: {payload[0].payload.global_coldStart.toString()}
+            </p>
+          </>
+        )}
         <Separator className="my-2" />
-        <p className="text-[#82ca9d]">
-          Serverless: {payload[0].payload.serverless_processingTime}
-        </p>
-        <p className="text-[#82ca9d]">
-          Cold start: {payload[0].payload.serverless_coldStart.toString()}
-        </p>
+        {line2 in payload[0].payload && (
+          <>
+            <p className="text-[#82ca9d]">
+              Regional: {payload[0].payload[line2]}
+            </p>
+            <p className="text-[#82ca9d]">
+              Cold start: {payload[0].payload.regional_coldStart.toString()}
+            </p>
+          </>
+        )}
       </div>
     );
   }

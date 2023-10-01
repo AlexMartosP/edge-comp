@@ -5,59 +5,71 @@ import { Label } from "@/components/ui/Label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/RadioGroup";
 import { useState } from "react";
 import Chart from "@/components/Chart";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 type Status = "idle" | "pending";
 type Data = {
   fetchNum: number;
-  edge_processingTime: number;
-  serverless_processingTime: number;
-  edge_coldStart: boolean;
-  serverless_coldStart: boolean;
-  edge_endToEndTime: number;
-  serverless_endToEndTime: number;
+  global_processingTime?: number;
+  global_coldStart?: boolean;
+  global_endToEndTime?: number;
+  regional_processingTime?: number;
+  regional_coldStart?: boolean;
+  regional_endToEndTime?: number;
 };
 
 export default function APIFetcher() {
   const [selections, setSelections] = useState({
-    edge: "global",
+    edge: {
+      global: true,
+      regional: false,
+    },
     numOfQueries: "1",
   });
   const [status, setStatus] = useState<Status>("idle");
   const [data, setData] = useState<Data[]>([]);
 
   function updateSelection(key: keyof typeof selections, value: string) {
-    setSelections((prev) => ({ ...prev, [key]: value }));
+    if (key === "edge") {
+      setSelections((prev) => ({
+        ...prev,
+        edge: {
+          ...prev.edge,
+          [value]: !prev.edge[value as "global" | "regional"],
+        },
+      }));
+    } else {
+      setSelections((prev) => ({ ...prev, [key]: value }));
+    }
   }
 
-  async function fetchEdge() {
+  async function fetchGlobalEdge() {
     const startTime = Date.now();
 
     const res = await fetch(
-      `/api/${
-        selections.edge === "global" ? "edge-global" : "edge-region"
-      }?numofqueries=${selections.numOfQueries}`
+      `/api/edge-global?numofqueries=${selections.numOfQueries}`
     );
     const data = await res.json();
 
     return {
-      edge_processingTime: data.duration,
-      edge_coldStart: data.isColdStart,
-      edge_endToEndTime: Date.now() - startTime,
+      global_processingTime: data.duration,
+      global_coldStart: data.isColdStart,
+      global_endToEndTime: Date.now() - startTime,
     };
   }
 
-  async function fetchServerless() {
+  async function fetchRegionalEdge() {
     const startTime = Date.now();
 
     const res = await fetch(
-      `/api/serverless?numofqueries=${selections.numOfQueries}`
+      `/api/edge-region?numofqueries=${selections.numOfQueries}`
     );
     const data = await res.json();
 
     return {
-      serverless_processingTime: data.duration,
-      serverless_coldStart: data.isColdStart,
-      serverless_endToEndTime: Date.now() - startTime,
+      regional_processingTime: data.duration,
+      regional_coldStart: data.isColdStart,
+      regional_endToEndTime: Date.now() - startTime,
     };
   }
 
@@ -65,18 +77,30 @@ export default function APIFetcher() {
     setData([]);
     setStatus("pending");
 
-    for (let i = 1; i <= 10; i++) {
-      const [edge, serverless] = await Promise.all([
-        fetchEdge(),
-        fetchServerless(),
-      ]);
+    for (let i = 1; i <= 5; i++) {
+      let edge: Omit<Data, "fetchNum">;
+
+      if (selections.edge.global && selections.edge.regional) {
+        const allEdge = await Promise.all([
+          fetchGlobalEdge(),
+          fetchRegionalEdge(),
+        ]);
+
+        edge = {
+          ...allEdge[0],
+          ...allEdge[1],
+        };
+      } else if (selections.edge.global) {
+        edge = await fetchGlobalEdge();
+      } else if (selections.edge.regional) {
+        edge = await fetchRegionalEdge();
+      }
 
       setData((prev) => [
         ...prev,
         {
           fetchNum: i,
           ...edge,
-          ...serverless,
         },
       ]);
     }
@@ -84,27 +108,37 @@ export default function APIFetcher() {
     setStatus("idle");
   }
 
+  console.log(data);
+
   return (
     <div className="p-4 border rounded-md">
       <div>
         <h2 className="font-semibold text-md">Global Edge or Regional Edge</h2>
         <p>Select what to compare Serverless functions to</p>
         <div className="py-1"></div>
-        <RadioGroup
-          defaultValue={selections.edge}
-          onValueChange={(value: string) => updateSelection("edge", value)}
-        >
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem value="global" id="global" />
-            <Label htmlFor="global">Global Edge</Label>
-            <RadioGroupItem value="regional" id="regional" />
-            <Label htmlFor="regional">Regional Edge</Label>
-          </div>
-        </RadioGroup>
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="global"
+            value="global"
+            checked={selections.edge.global}
+            onCheckedChange={() => updateSelection("edge", "global")}
+          />
+          <Label htmlFor="global">Global edge</Label>
+          <Checkbox
+            id="regional"
+            value="regional"
+            checked={selections.edge.regional}
+            onCheckedChange={() => updateSelection("edge", "regional")}
+          />
+          <Label htmlFor="region">Regional edge</Label>
+        </div>
         <div className="py-2"></div>
         <h2 className="font-semibold text-md">Number of queries</h2>
         <p>Select number of queries to the database from the route handler</p>
-        <RadioGroup defaultValue={selections.numOfQueries}>
+        <RadioGroup
+          defaultValue={selections.numOfQueries}
+          onValueChange={(value) => updateSelection("numOfQueries", value)}
+        >
           <div className="flex items-center space-x-2">
             <RadioGroupItem value="1" id="1" />
             <Label htmlFor="1">Single query</Label>
@@ -116,7 +150,13 @@ export default function APIFetcher() {
         </RadioGroup>
       </div>
       <div className="py-4"></div>
-      <Button disabled={status !== "idle"} onClick={startFetching}>
+      <Button
+        disabled={
+          status !== "idle" ||
+          (!selections.edge.global && !selections.edge.regional)
+        }
+        onClick={startFetching}
+      >
         {status === "idle" ? "Start fetching" : "Fetching..."}
       </Button>
       <div className="py-4"></div>
@@ -129,8 +169,8 @@ export default function APIFetcher() {
             data={data}
             width={500}
             height={500}
-            line1Key="edge_processingTime"
-            line2Key="serverless_processingTime"
+            line1Key="global_processingTime"
+            line2Key="regional_processingTime"
           />
         </div>
         <div>
@@ -143,8 +183,8 @@ export default function APIFetcher() {
             data={data}
             width={500}
             height={500}
-            line1Key="edge_endToEndTime"
-            line2Key="serverless_endToEndTime"
+            line1Key="global_endToEndTime"
+            line2Key="regional_endToEndTime"
           />
         </div>
       </div>
